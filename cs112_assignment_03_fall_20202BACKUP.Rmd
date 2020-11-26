@@ -44,6 +44,8 @@ set.seed(928)
 
 
 ## QUESTION 1: Data Generating Example
+#I got help from Frankie and Albin on this assignment! :) 
+
 
 The following code, creates a toy dataset with a treatment variable, $D$, an outcome variable, $Y$, and other variables $V_1$ to $V_4$. 
 
