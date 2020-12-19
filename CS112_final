@@ -9,6 +9,9 @@ library(MatchIt)
 library(cem)
 library(xtable)
 library(Cairo)
+library(psen)
+library(rbounds)    
+library(sensitivitymv)
 
 new_data <- read.dta("NGO_LSE_org5.dta")
 
@@ -93,3 +96,12 @@ matrix1 <- GenMatch(Tr = tr, X = x, BalanceMatrix = BalanceMat, estimand = "ATT"
 y = col.rel$NGOactive
 mout <- Match(Y=y, Tr=tr, X=x, estimand="ATT", Weight.matrix=matrix1)
 summary(mout) #estimate of 0.17, bad match also 2.22e-16 
+
+#this was adapted from https://nbviewer.jupyter.org/gist/viniciusmss/a156c3f22081fb5c690cdd58658f61fa
+psens1 <- psens(mout, Gamma=3, GammaInc=.1)
+psens1$bounds
+#genetic matching loses robustness at 2.3 
+
+psens2<-psens(col_relig.match, Gamma=3, GammaInc=.1)
+psens2$bounds
+#propensity score matching loses robustness at 2.2
