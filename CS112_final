@@ -1,0 +1,95 @@
+library(foreign)
+library(sandwich)
+library(lmtest)
+library(car)
+library(leaps)
+library(Amelia)
+library(Zelig)
+library(MatchIt)
+library(cem)
+library(xtable)
+library(Cairo)
+
+new_data <- read.dta("NGO_LSE_org5.dta")
+
+#this was adapted from the replication code from Harvard Dataverse
+#Create dataset containing only variables of interest (dep and ind)
+attach(new_data)
+replidata2 <-as.matrix(cbind(NGOactive, NGOaid_log, gdpcap_log, polity2, Bilaid_log, otherNGO, pop_log,Gini,HDI2004,Freedom,
+		law_ord,kauf_law,ti,export_tot_sc,UNvoting,otherNGOamount_log,countrycode,col_relig,religionmatch2,colony))
+dim(replidata2)
+detach(new_data)
+replidata3 <- as.data.frame(replidata2)
+
+#Transform export_tot_sc to log so that Amelia doesn't impute negative values
+replidata4 <- replidata3
+replidata4$export_ln <- log(replidata4$export_tot_sc,exp(1)) 
+replidata4$export_tot_sc <- NULL
+
+#Impute missing data
+# we use the amelia() function to create the five bootstrapped
+# em imputation models.  Notice the use of the cs argument 
+# and ts argument to reflect the panel nature of our data.  
+
+set.seed(12345)
+a.out3 <- amelia(x = replidata4, cs="countrycode",m = 5)
+summary(a.out3)
+
+# save imputed datasets (default .csv)
+write.amelia(obj=a.out3, file.stem = "a.out3")
+
+
+
+#Pre-matching estimate of effect of colony/religion on NGOactive
+imp1 <- a.out3$imputations[[1]]
+attach(imp1)
+treat <- factor(col_relig)
+imp1 <- cbind(imp1, treat)
+detach(imp1)
+
+#Assuming that we can justify dichotomous treatments
+
+###################################
+### Effect of col_relig on NGOactive
+###################################
+#Create dataset with only vars of interest
+attach(imp1)
+col.rel <-as.matrix(cbind(NGOactive, pop_log,col_relig))
+dim(col.rel)
+detach(imp1)
+
+col.rel <- as.data.frame(col.rel)
+attach(col.rel)
+treat2 <- ifelse(col_relig>0,1,0)
+col.rel <- cbind(col.rel,treat2)
+col.rel$col_relig <- NULL
+detach(col.rel)
+
+#CEM
+cem.match <- cem(treatment="treat2", data=col.rel, drop="NGOactive")
+cem.match$imbalance
+tab <- relax.cem(cem.match, col.rel, depth = 1, perc = 0.3)
+
+#ATT from cem matched data
+activeCemMatchedModel <- att(cem.match, NGOactive~treat2+pop_log, data=col.rel, model="logit")
+print(xtable(t(activeCemMatchedModel$att.model)))
+
+#propensity score matching
+propscores1 <- glm(treat2 ~ . - NGOactive, data=col.rel)
+X  <- propscores1$fitted.values
+Y  <- col.rel$NGOactive
+Tr  <- col.rel$treat2
+col_relig.match  <- Match(Y=Y, Tr=Tr, X=X, M=1)
+summary(col_relig.match)#estimate 0.16
+
+mb  <- MatchBalance(NGOactive ~ ., data=col.rel, match.out=cem.match, nboots=10)
+mb
+
+#genetic matching
+tr <- col.rel$treat2
+x <- pop_log
+BalanceMat <- cbind(pop_log)
+matrix1 <- GenMatch(Tr = tr, X = x, BalanceMatrix = BalanceMat, estimand = "ATT", M = 1, unif.seed = 123, int.seed = 92485, pop.size = 300, max.generations = 10,  wait.generations = 1)
+y = col.rel$NGOactive
+mout <- Match(Y=y, Tr=tr, X=x, estimand="ATT", Weight.matrix=matrix1)
+summary(mout) #estimate of 0.17, bad match also 2.22e-16 
